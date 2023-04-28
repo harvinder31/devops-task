@@ -1,0 +1,43 @@
+# Define a Service for the Product Catalogue application
+apiVersion: v1
+kind: Service
+metadata:
+  name: productcatalogue
+  labels:
+    app: productcatalogue
+spec:
+  type: NodePort
+  selector:
+    app: productcatalogue
+  ports:
+  - protocol: TCP
+    port: 8020
+    name: http
+
+# Define a Deployment for the Product Catalogue application
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: productcatalogue
+spec:
+  selector:
+    matchLabels:
+      app: productcatalogue
+  replicas: 1 # Number of replicas
+  template:
+    metadata:
+      labels:
+        app: productcatalogue
+    spec:
+      containers:
+      - name: productcatalogue
+        image: task/productcatalogue:latest # Docker image to use
+        ports:
+        - containerPort: 8020 # Port exposed by the container
+        livenessProbe: # Liveness probe to check the health of the application
+          httpGet:
+            path: /healthcheck
+            port: 8025
+          initialDelaySeconds: 30
+          timeoutSeconds: 1
+

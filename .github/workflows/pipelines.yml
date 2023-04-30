@@ -1,28 +1,62 @@
+name: CI/CD Pipeline
+
 on:
   push:
-    branches: [ main ]
- 
+    branches:
+      - main
+
+env:
+  PROJECT_ID: your-gcp-project-id
+  GCR_HOSTNAME: gcr.io
+  KUBECONFIG: kubeconfig.yaml
+  K8S_NAMESPACE: your-kubernetes-namespace
+  HELM_CHART_PATH: path/to/your/helm/chart
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
-    - uses: actions/checkout@v2
-    - name: Use Node.js 16.14 to Build
-      uses: actions/setup-node@v2
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Google Cloud SDK
+      uses: google-github-actions/setup-gcloud@v0.3.0
       with:
-        node-version: 16.14
-#     - run: wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash
-#     - run: nvm install 16.14
-#     - run: nvm use 16.14
-    - run: npm install --legacy-peer-deps
-   # - run: npm run build
-    - run: CI=false npm run build
-    - name: ssh deploy on aws ec2
-      uses: easingthemes/ssh-deploy@v2.1.4
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        project_id: ${{ env.PROJECT_ID }}
+        export_default_credentials: true
+
+    - name: Authenticate Docker to GCR
+      run: gcloud auth configure-docker ${{ env.GCR_HOSTNAME }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+
+    - name: Build and push Docker images
+      uses: docker/build-push-action@v2
       with:
-          #switches: -avzr --delete
-          path: ./*
-          remote_path: /var/www/my-app/
-          remote_host: ec2-43-205-47-149.ap-south-1.compute.amazonaws.com
-          remote_user: ubuntu
-          remote_key: "${{ secrets.SSH_PRIVATE_KEY }}"
+        context: .
+        file: ./path/to/your/docker-compose.yml
+        push: true
+        tags: |
+          ${{ env.GCR_HOSTNAME }}/${{ env.PROJECT_ID }}/service1:${{ github.sha }}
+          ${{ env.GCR_HOSTNAME }}/${{ env.PROJECT_ID }}/service2:${{ github.sha }}
+          # Add more services if needed
+
+    - name: Install and configure Helm
+      run: |
+        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        chmod 700 get_helm.sh
+        ./get_helm.sh
+        helm repo add stable https://charts.helm.sh/stable
+        helm repo update
+
+    - name: Deploy to Kubernetes
+      run: |
+        gcloud container clusters get-credentials your-cluster-name --zone your-cluster-zone
+        helm upgrade --install --namespace ${{ env.K8S_NAMESPACE }} --create-namespace \
+          --set image.repository=${{ env.GCR_HOSTNAME }}/${{ env.PROJECT_ID }}/service1 \
+          --set image.tag=${{ github.sha }} \
+          your-release-name ${{ env.HELM_CHART_PATH }}
+        # Add more services if needed, using the same pattern as above
